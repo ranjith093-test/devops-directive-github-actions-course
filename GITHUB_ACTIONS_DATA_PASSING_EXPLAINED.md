@@ -372,3 +372,172 @@ In your file 2:
 - Job output is named `foo` (public interface)
 - Consumer correctly uses `needs.producer.outputs.foo` (the job output name)
 - **This is why it works!** The consumer doesn't care that the step output is named `foo1`
+
+---
+
+## Critical Debugging Example: The Name Mismatch Problem
+
+### The Problem You're Experiencing Now
+
+You have this configuration:
+
+```yaml
+steps:
+- name: Generate and export foo
+  id: generate-foo
+  run: |
+    echo "foo=${foo}" >> "$GITHUB_OUTPUT"    # ← Creates step output "foo"
+
+outputs:
+  foo: ${{ steps.generate-foo.outputs.foo1}}  # ← Tries to read step output "foo1"
+
+- name: Inspect values inside producer
+  run: |
+    echo "foo (step output): ${{ steps.generate-foo.outputs.foo1 }}"  # ← Tries to read step output "foo1"
+```
+
+**Output:** Empty string for both the job output and the echo statement!
+
+### Why It Returns Empty
+
+This is a **NAME MISMATCH**:
+
+```
+What you CREATED:
+┌────────────────────────────────────┐
+│ echo "foo=bar" >> "$GITHUB_OUTPUT" │
+│                                    │
+│ Creates step output named "foo"   │
+└────────────────────────────────────┘
+
+What you're TRYING TO ACCESS:
+┌────────────────────────────────────────────┐
+│ steps.generate-foo.outputs.foo1            │
+│                                            │
+│ Looking for step output named "foo1"       │
+│ (DOESN'T EXIST!)                           │
+└────────────────────────────────────────────┘
+```
+
+### The Exact Flow of Your Current Code
+
+```
+Step 1: Create Step Output
+───────────────────────────
+echo "foo=bar" >> "$GITHUB_OUTPUT"
+        ↓
+Creates: steps.generate-foo.outputs.foo = "bar"
+         ────────────────────────────────────
+                        ↑
+                   Name is "foo"
+
+Step 2: Try to Read Step Output for Job Output
+───────────────────────────────────────────────
+outputs:
+  foo: ${{ steps.generate-foo.outputs.foo1 }}
+                                        ────
+                                         ↑
+                                    Name is "foo1"
+                                    (DOESN'T EXIST!)
+Result: Job output "foo" = "" (empty)
+
+Step 3: Try to Echo Step Output
+────────────────────────────────
+echo "foo (step output): ${{ steps.generate-foo.outputs.foo1 }}"
+                                                          ────
+                                                           ↑
+                                                      Name is "foo1"
+                                                      (DOESN'T EXIST!)
+Result: Prints empty string
+```
+
+### What Will Be the Output?
+
+```bash
+FOO (set via GITHUB_ENV):   bar          # ✓ Works - Environment variable
+foo (step output):                       # ✗ Empty - Wrong step output name
+```
+
+And in the consumer job:
+```bash
+Value from producer:                     # ✗ Empty - Job output is empty because it tried to read non-existent foo1
+FOO in consumer:            <UNSET>      # ✗ Empty - Environment variables don't cross job boundaries
+```
+
+### The Fix Options
+
+You have THREE things that must align:
+
+1. **Where you CREATE the step output** (line 19)
+2. **Where you READ it for the job output** (line 11)
+3. **Where you ECHO it** (line 27)
+
+**Option A: Keep step output name as "foo"**
+```yaml
+# Line 19 - CREATE
+echo "foo=bar" >> "$GITHUB_OUTPUT"         # ← Step output "foo"
+
+# Line 11 - READ for job output
+outputs:
+  foo: ${{ steps.generate-foo.outputs.foo }}  # ← Read step output "foo" ✓
+
+# Line 27 - ECHO
+echo "foo: ${{ steps.generate-foo.outputs.foo }}"  # ← Read step output "foo" ✓
+```
+
+**Option B: Change everything to "foo1"**
+```yaml
+# Line 19 - CREATE
+echo "foo1=bar" >> "$GITHUB_OUTPUT"           # ← Step output "foo1"
+
+# Line 11 - READ for job output
+outputs:
+  foo: ${{ steps.generate-foo.outputs.foo1 }}  # ← Read step output "foo1" ✓
+
+# Line 27 - ECHO
+echo "foo1: ${{ steps.generate-foo.outputs.foo1 }}"  # ← Read step output "foo1" ✓
+```
+
+### The Golden Rule
+
+**The name you use when CREATING must EXACTLY match the name you use when ACCESSING:**
+
+```
+CREATE:  echo "NAME=value" >> "$GITHUB_OUTPUT"
+         ─────────────────
+              ↓
+ACCESS:  steps.step-id.outputs.NAME
+         ───────────────────────────
+```
+
+If `NAME` doesn't match, you get an empty string with **NO ERROR MESSAGE**.
+
+### Understanding the Three Names
+
+In your workflow, you're dealing with **three different names**:
+
+1. **Shell variable name**: `foo` (line 16: `foo=bar`)
+   - This can be any name you want
+   - Only used within the same run block
+
+2. **Step output name**: What comes BEFORE the `=` in `GITHUB_OUTPUT`
+   - Currently: `foo` (line 19: `echo "foo=...`)
+   - Must match when accessing via `steps.generate-foo.outputs.XXX`
+
+3. **Job output name**: The key in the `outputs:` section
+   - Currently: `foo` (line 11: `foo: ...`)
+   - Must match when accessing via `needs.producer.outputs.XXX`
+
+**Critical Point:** Names #1 and #2 can be different, but #2 must match everywhere you access it!
+
+```yaml
+run: |
+  my_variable=bar                           # ← Name 1: Shell variable "my_variable"
+  echo "my_output=${my_variable}" >> ...    # ← Name 2: Step output "my_output"
+
+outputs:
+  my_job_output: ${{ steps.x.outputs.my_output }}  # ← Name 3: Job output "my_job_output"
+                                    ─────────
+                                        ↑
+                              Must match Name 2!
+```
