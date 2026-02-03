@@ -15,7 +15,7 @@ jobs:
         STEP_VAR: I_AM_STEP_SCOPED
       run: |
         echo "WORKFLOW_VAR: $WORKFLOW_VAR"
-        echo "JOB_VAR: $JOB_VAR""
+        echo "JOB_VAR: $JOB_VAR"
         echo "STEP_VAR: $STEP_VAR"
 
     - name: Inspect scopes job 1 step 2
