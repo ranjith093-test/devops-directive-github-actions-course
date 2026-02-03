@@ -17,7 +17,7 @@ jobs:
         foo=bar
 
         # 1) Step output (for job output)
-        echo "foo1=${foo}" >> "$GITHUB_OUTPUT"
+        echo "foo=${foo}" >> "$GITHUB_OUTPUT"
 
         # 2) Job-scoped environment variable
         echo "FOO=${foo}" >> "$GITHUB_ENV"
@@ -25,7 +25,7 @@ jobs:
     - name: Inspect values inside producer
       run: |
         echo "FOO (set via GITHUB_ENV):   $FOO"
-        echo "foo1 (step output):          ${{ steps.generate-foo.outputs.foo1 }}"
+        echo "foo (step output):          ${{ steps.generate-foo.outputs.foo1 }}"
 
   consumer:
     runs-on: ubuntu-24.04
