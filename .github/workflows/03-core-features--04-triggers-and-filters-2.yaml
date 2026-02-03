@@ -1,0 +1,25 @@
+name: Triggering Events
+
+on:
+  push:
+    branches:
+    - "example-branch/*"
+
+  pull_request:
+    types:
+    - opened
+    - synchronize
+    - reopened
+    paths:
+    - "03-core-feature/filters/*.md"
+    - "!03-core-feature/filters/*.txt"
+
+  workflow_dispatch:
+jobs:
+  echo-event:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Dump full event json
+      run: |
+        echo "=== $GITHUB_EVENT_NAME payload ==="
+        cat "$GITHUB_EVENT_PATH"
