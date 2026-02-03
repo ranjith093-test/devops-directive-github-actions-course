@@ -24,7 +24,7 @@ jobs:
     - name: Inspect values inside producer
       run: |
         echo "FOO (set via GITHUB_ENV):   $FOO"
-        echo "foo2 (step output):          ${{ steps.generate-foo.outputs.foo }}"
+        echo "foo1 (step output):          ${{ steps.generate-foo.outputs.foo }}"
 
   consumer:
     runs-on: ubuntu-24.04
